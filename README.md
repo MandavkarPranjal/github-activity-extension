@@ -42,13 +42,14 @@ GitHub Activity Viewer is a browser extension that provides a clean, intuitive i
 
 ## Installation
 1. clone this repository
-    ```bash
+
+   ```bash
     git clone https://github.com/lostheaven/github-activity-viewer.git
     ```
-2. Open Chrome and go to `chrome://extensions/`
-3. Enable **Developer Mode** in the top right corner
-4. Click **Load Unpacked** and select the cloned repository folder
-5. Enjoy the extension!
+3. Open Chrome and go to `chrome://extensions/`
+4. Enable **Developer Mode** in the top right corner
+5. Click **Load Unpacked** and select the cloned repository folder
+6. Enjoy the extension!
 
 ## Contributing
 Contributions are welcome! If you find any bugs or have suggestions for improvements, please open an issue or submit a pull request on the GitHub repository.
