@@ -1,28 +1,114 @@
 let currentPage = 1;
 const ITEMS_PER_PAGE = 10;
 let allActivities = [];
+let searchTimeout = null;
+
+// Add search functionality
+function searchActivities(searchTerm) {
+  const activitiesContainer = document.getElementById("activities");
+  const searchStats = document.getElementById("search-stats");
+  const loadMoreButton = document.getElementById("load-more");
+
+  if (!searchTerm.trim()) {
+    // Show all activities if search is empty
+    const activitiesHTML = allActivities
+      .slice(0, currentPage * ITEMS_PER_PAGE)
+      .map((activity) => formatActivity(activity))
+      .join("");
+    activitiesContainer.innerHTML = activitiesHTML;
+    searchStats.textContent = "";
+    loadMoreButton.style.display =
+      allActivities.length > currentPage * ITEMS_PER_PAGE ? "block" : "none";
+    return;
+  }
+
+  // Filter activities based on search term
+  const searchRegex = new RegExp(searchTerm, "gi");
+  const filteredActivities = allActivities.filter((activity) => {
+    const description = getActivityDescription(activity);
+    return description.toLowerCase().includes(searchTerm.toLowerCase());
+  });
+
+  if (filteredActivities.length === 0) {
+    activitiesContainer.innerHTML = `<div class="no-results">No activities found matching "${searchTerm}"</div>`;
+    searchStats.textContent = "No matches found";
+    loadMoreButton.style.display = "none";
+    return;
+  }
+
+  // Highlight matching text and display results
+  const activitiesHTML = filteredActivities
+    .map((activity) => {
+      const description = getActivityDescription(activity);
+      const highlightedDescription = description.replace(
+        searchRegex,
+        (match) => `<span class="highlight">${match}</span>`,
+      );
+      return formatActivity(activity, highlightedDescription);
+    })
+    .join("");
+
+  activitiesContainer.innerHTML = activitiesHTML;
+  searchStats.textContent = `Found ${filteredActivities.length} matching activities`;
+  loadMoreButton.style.display = "none";
+}
+
+// Add helper function to get activity description
+function getActivityDescription(activity) {
+  const { type, repo } = activity;
+  let description = "";
+
+  switch (type) {
+    case "PushEvent":
+      description = `Pushed to ${repo.name}`;
+      break;
+    case "CreateEvent":
+      description = `Created ${activity.payload?.ref_type || "resource"} in ${repo.name}`;
+      break;
+    case "IssuesEvent":
+      description = `${activity.payload?.action || "Updated"} issue in ${repo.name}`;
+      break;
+    case "PullRequestEvent":
+      description = `${activity.payload?.action || "Updated"} pull request in ${repo.name}`;
+      break;
+    case "WatchEvent":
+      description = `Starred ${repo.name}`;
+      break;
+    case "ForkEvent":
+      description = `Forked ${repo.name}`;
+      break;
+    default:
+      description = `Activity in ${repo.name}`;
+  }
+  return description;
+}
 
 function updateDateTime() {
   const now = new Date();
 
-  // Format time
+  // Format time in local timezone (not UTC)
   const timeElement = document.getElementById("current-time");
-  timeElement.textContent =
-    now.toLocaleTimeString("en-US", {
-      hour12: false,
-      timeZone: "UTC",
-      hour: "2-digit",
-      minute: "2-digit",
-    }) + " UTC";
+  timeElement.textContent = now.toLocaleTimeString("en-US", {
+    hour12: false,
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+  });
 
-  // Format date
+  // Format date in local timezone (not UTC)
   const dateElement = document.getElementById("current-date");
   dateElement.textContent = now.toLocaleDateString("en-US", {
-    timeZone: "UTC",
     year: "numeric",
     month: "short",
     day: "numeric",
   });
+
+  // Add timezone indicator
+  const timeZoneName = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const timeZoneElement = document.getElementById("timezone");
+  if (timeZoneElement) {
+    timeZoneElement.textContent = `(${timeZoneName})`;
+  }
 }
 
 function initThemeToggle() {
@@ -134,38 +220,15 @@ function handleAvatarError() {
   };
 }
 
-function formatActivity(activity) {
+function formatActivity(activity, customDescription = null) {
   if (!activity || !activity.type || !activity.repo) {
     return ""; // Skip invalid activities
   }
 
-  const { type, repo, created_at } = activity;
-  let description = "";
+  const { type, created_at } = activity;
+  const description = customDescription || getActivityDescription(activity);
 
   try {
-    switch (type) {
-      case "PushEvent":
-        description = `Pushed to ${repo.name}`;
-        break;
-      case "CreateEvent":
-        description = `Created ${activity.payload?.ref_type || "resource"} in ${repo.name}`;
-        break;
-      case "IssuesEvent":
-        description = `${activity.payload?.action || "Updated"} issue in ${repo.name}`;
-        break;
-      case "PullRequestEvent":
-        description = `${activity.payload?.action || "Updated"} pull request in ${repo.name}`;
-        break;
-      case "WatchEvent":
-        description = `Starred ${repo.name}`;
-        break;
-      case "ForkEvent":
-        description = `Forked ${repo.name}`;
-        break;
-      default:
-        description = `Activity in ${repo.name}`;
-    }
-
     return `
             <div class="activity-item">
                 <div class="activity-icon">
@@ -185,6 +248,13 @@ function formatActivity(activity) {
 
 async function loadMoreActivities() {
   const loadMoreButton = document.getElementById("load-more");
+  const searchInput = document.getElementById("activity-search");
+
+  // Don't load more if there's an active search
+  if (searchInput.value.trim()) {
+    return;
+  }
+
   loadMoreButton.disabled = true;
   loadMoreButton.textContent = "Loading...";
 
@@ -250,6 +320,7 @@ async function init() {
     document.getElementById("userAvatar").src = userData.avatar_url;
 
     // Display activities
+    // Inside init function, after loading activities:
     if (Array.isArray(activities) && activities.length > 0) {
       const activitiesHTML = activities
         .map((activity) => formatActivity(activity))
@@ -261,6 +332,20 @@ async function init() {
       loadMoreButton.style.display =
         activities.length >= ITEMS_PER_PAGE ? "block" : "none";
       loadMoreButton.addEventListener("click", loadMoreActivities);
+
+      // Add search functionality
+      const searchInput = document.getElementById("activity-search");
+      searchInput.addEventListener("input", (e) => {
+        // Clear previous timeout
+        if (searchTimeout) {
+          clearTimeout(searchTimeout);
+        }
+
+        // Set new timeout for search
+        searchTimeout = setTimeout(() => {
+          searchActivities(e.target.value);
+        }, 300); // 300ms debounce
+      });
     } else {
       document.getElementById("activities").innerHTML =
         '<div class="no-activities">No recent activities found</div>';

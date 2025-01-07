@@ -34,9 +34,28 @@
             </button>
         </div>
         <div class="datetime">
-            <div id="current-date"></div>
-            <div id="current-time"></div>
+            <div class="date-time-container">
+                <div id="current-date"></div>
+                <div class="time-wrapper">
+                    <div id="current-time"></div>
+                    <div id="timezone" class="timezone"></div>
+                </div>
+            </div>
         </div>
+
+        <div class="search-container">
+            <div class="search-wrapper">
+                <input type="text" id="activity-search" class="search-input" placeholder="Search activities..."
+                    aria-label="Search activities">
+                <svg class="search-icon" viewBox="0 0 24 24" width="16" height="16">
+                    <path fill="currentColor"
+                        d="M10.25 2a8.25 8.25 0 0 1 6.34 13.53l5.69 5.69a.75.75 0 1 1-1.06 1.06l-5.69-5.69A8.25 8.25 0 1 1 10.25 2ZM3.5 10.25a6.75 6.75 0 1 0 13.5 0 6.75 6.75 0 0 0-13.5 0Z">
+                    </path>
+                </svg>
+            </div>
+            <div id="search-stats" class="search-stats"></div>
+        </div>
+
         <div class="activities-container">
             <div id="activities" class="activities"></div>
             <div class="load-more-container">
