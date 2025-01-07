@@ -1,3 +1,7 @@
+let currentPage = 1;
+const ITEMS_PER_PAGE = 10;
+let allActivities = [];
+
 function updateDateTime() {
   const now = new Date();
 
@@ -58,9 +62,8 @@ function formatDate(dateString) {
   });
 }
 
-async function fetchUserData(username) {
+async function fetchUserData(username, page = 1) {
   try {
-    // Add user-agent header to avoid GitHub API restrictions
     const headers = {
       Accept: "application/vnd.github.v3+json",
       "User-Agent": "GitHub-Activity-Extension",
@@ -68,16 +71,14 @@ async function fetchUserData(username) {
 
     const [userResponse, activitiesResponse] = await Promise.all([
       fetch(`https://api.github.com/users/${username}`, { headers }),
-      fetch(`https://api.github.com/users/${username}/events`, { headers }),
+      fetch(
+        `https://api.github.com/users/${username}/events?page=${page}&per_page=${ITEMS_PER_PAGE}`,
+        { headers },
+      ),
     ]);
 
-    if (!userResponse.ok) {
-      throw new Error(`Failed to fetch user data: ${userResponse.status}`);
-    }
-    if (!activitiesResponse.ok) {
-      throw new Error(
-        `Failed to fetch activities: ${activitiesResponse.status}`,
-      );
+    if (!userResponse.ok || !activitiesResponse.ok) {
+      throw new Error(`Failed to fetch data: ${userResponse.status}`);
     }
 
     const userData = await userResponse.json();
@@ -94,7 +95,7 @@ async function fetchUserData(username) {
 
     return { userData, activities };
   } catch (error) {
-    console.error("Error in fetchUserData:", error);
+    console.error("Error fetching data:", error);
     throw error;
   }
 }
@@ -182,12 +183,48 @@ function formatActivity(activity) {
   }
 }
 
+async function loadMoreActivities() {
+  const loadMoreButton = document.getElementById("load-more");
+  loadMoreButton.disabled = true;
+  loadMoreButton.textContent = "Loading...";
+
+  try {
+    const username = extractUsername(
+      await getCurrentTab().then((tab) => tab.url),
+    );
+    currentPage++;
+
+    const { activities } = await fetchUserData(username, currentPage);
+
+    if (Array.isArray(activities) && activities.length > 0) {
+      allActivities = [...allActivities, ...activities];
+      const activitiesContainer = document.getElementById("activities");
+      const newActivitiesHTML = activities
+        .map((activity) => formatActivity(activity))
+        .join("");
+      activitiesContainer.innerHTML += newActivitiesHTML;
+    }
+
+    // Hide the button if no more activities
+    if (activities.length < ITEMS_PER_PAGE) {
+      loadMoreButton.style.display = "none";
+    } else {
+      loadMoreButton.disabled = false;
+      loadMoreButton.textContent = "Load More Activities";
+    }
+  } catch (error) {
+    console.error("Error loading more activities:", error);
+    loadMoreButton.textContent = "Error Loading More";
+    setTimeout(() => {
+      loadMoreButton.disabled = false;
+      loadMoreButton.textContent = "Try Again";
+    }, 2000);
+  }
+}
+
 async function init() {
   try {
-    // Initialize theme toggle
     initThemeToggle();
-
-    // Start datetime updates
     updateDateTime();
     setInterval(updateDateTime, 1000);
 
@@ -200,43 +237,38 @@ async function init() {
       return;
     }
 
-    // Show loading state
     document.getElementById("activities").innerHTML =
       '<div class="loading">Loading activities...</div>';
-    document.getElementById("username").textContent = "Loading...";
-    document.getElementById("login").textContent = "";
-
-    // Set default avatar while loading
-    document.getElementById("userAvatar").src = "icons/icon48.png"; // Make sure this default icon exists
 
     const { userData, activities } = await fetchUserData(username);
+    allActivities = activities;
 
     // Update user info
-    if (userData.avatar_url) {
-      document.getElementById("userAvatar").src = userData.avatar_url;
-    }
     document.getElementById("username").textContent =
       userData.name || userData.login;
     document.getElementById("login").textContent = `@${userData.login}`;
+    document.getElementById("userAvatar").src = userData.avatar_url;
 
-    // Update activities
-    if (activities.length > 0) {
+    // Display activities
+    if (Array.isArray(activities) && activities.length > 0) {
       const activitiesHTML = activities
-        .slice(0, 10)
         .map((activity) => formatActivity(activity))
         .join("");
       document.getElementById("activities").innerHTML = activitiesHTML;
+
+      // Show load more button if there are activities
+      const loadMoreButton = document.getElementById("load-more");
+      loadMoreButton.style.display =
+        activities.length >= ITEMS_PER_PAGE ? "block" : "none";
+      loadMoreButton.addEventListener("click", loadMoreActivities);
     } else {
       document.getElementById("activities").innerHTML =
-        '<div class="loading">No recent activities found</div>';
+        '<div class="no-activities">No recent activities found</div>';
     }
   } catch (error) {
-    console.error("Error in init:", error);
-    // Show error state
+    console.error("Error:", error);
     document.getElementById("activities").innerHTML =
       `<div class="error">${error.message}</div>`;
-    document.getElementById("username").textContent = "Error";
-    document.getElementById("login").textContent = "Could not load user data";
   }
 }
 

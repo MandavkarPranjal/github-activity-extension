@@ -243,7 +243,6 @@ h2 {
     background: var(--secondary-text);
 }
 
-/* No activities state */
 .no-activities {
     text-align: center;
     color: var(--secondary-text);
@@ -252,4 +251,58 @@ h2 {
     background-color: var(--hover-bg);
     border-radius: 6px;
     margin: 8px 0;
+}
+
+.activities-container {
+    max-height: 400px;
+    overflow-y: auto;
+    margin-top: 12px;
+}
+
+.load-more-container {
+    padding: 16px;
+    text-align: center;
+}
+
+.load-more-button {
+    background-color: var(--hover-bg);
+    color: var(--text-color);
+    border: 1px solid var(--border-color);
+    border-radius: 6px;
+    padding: 8px 16px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s ease;
+}
+
+.load-more-button:hover {
+    background-color: var(--border-color);
+}
+
+.load-more-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.activity-stats {
+    display: flex;
+    justify-content: space-around;
+    padding: 12px;
+    background-color: var(--hover-bg);
+    border-radius: 6px;
+    margin-bottom: 12px;
+}
+
+.stat-item {
+    text-align: center;
+}
+
+.stat-value {
+    font-size: 18px;
+    font-weight: 600;
+}
+
+.stat-label {
+    font-size: 12px;
+    color: var(--secondary-text);
 }
