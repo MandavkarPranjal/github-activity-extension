@@ -220,6 +220,41 @@ function handleAvatarError() {
   };
 }
 
+function getActivityUrl(activity) {
+  const { type, repo, payload } = activity;
+  const baseUrl = `https://github.com/${repo.name}`;
+
+  switch (type) {
+    case "PushEvent":
+      return payload.commits && payload.commits.length > 0
+        ? `${baseUrl}/commit/${payload.commits[0].sha}`
+        : `${baseUrl}/commits`;
+
+    case "CreateEvent":
+      if (payload.ref_type === "repository") {
+        return baseUrl;
+      }
+      return `${baseUrl}/tree/${payload.ref}`;
+
+    case "IssuesEvent":
+      return payload.issue ? payload.issue.html_url : `${baseUrl}/issues`;
+
+    case "PullRequestEvent":
+      return payload.pull_request
+        ? payload.pull_request.html_url
+        : `${baseUrl}/pulls`;
+
+    case "WatchEvent":
+      return baseUrl;
+
+    case "ForkEvent":
+      return payload.forkee ? payload.forkee.html_url : baseUrl;
+
+    default:
+      return baseUrl;
+  }
+}
+
 function formatActivity(activity, customDescription = null) {
   if (!activity || !activity.type || !activity.repo) {
     return ""; // Skip invalid activities
@@ -227,10 +262,16 @@ function formatActivity(activity, customDescription = null) {
 
   const { type, created_at } = activity;
   const description = customDescription || getActivityDescription(activity);
+  const activityUrl = getActivityUrl(activity);
 
   try {
     return `
-            <div class="activity-item">
+            <div class="activity-item"
+                onclick="window.open('${activityUrl}', '_blank')"
+                role="link"
+                tabindex="0"
+                data-url="${activityUrl}"
+            >
                 <div class="activity-icon">
                     ${getActivityIcon(type)}
                 </div>
@@ -292,6 +333,55 @@ async function loadMoreActivities() {
   }
 }
 
+function initActivityNavigation() {
+  // Add click event listener to all activity items
+  document.addEventListener("click", (event) => {
+    // Find the closest activity item or arrow button
+    const activityItem = event.target.closest(".activity-item");
+    const arrowButton = event.target.closest(".activity-arrow");
+
+    if (activityItem) {
+      const url = activityItem.getAttribute("data-url");
+      if (url) {
+        // Check if click was on the arrow button
+        if (arrowButton) {
+          // If arrow was clicked, prevent the main activity click
+          event.stopPropagation();
+          window.open(url, "_blank");
+        } else {
+          // If anywhere else in the activity was clicked
+          window.open(url, "_blank");
+        }
+      }
+    }
+  });
+
+  // Keep keyboard navigation for accessibility
+  document.addEventListener("keydown", (event) => {
+    const activityItem = event.target.closest(".activity-item");
+    if (activityItem && event.key === "Enter") {
+      const url = activityItem.getAttribute("data-url");
+      if (url) {
+        window.open(url, "_blank");
+      }
+    }
+  });
+}
+
+function initActivityKeyboardNavigation() {
+  document.addEventListener("keydown", (event) => {
+    if (
+      event.target.classList.contains("activity-item") &&
+      event.key === "Enter"
+    ) {
+      const url = event.target.getAttribute("data-url");
+      if (url) {
+        window.open(url, "_blank");
+      }
+    }
+  });
+}
+
 async function init() {
   try {
     initThemeToggle();
@@ -312,6 +402,9 @@ async function init() {
 
     const { userData, activities } = await fetchUserData(username);
     allActivities = activities;
+
+    // Initialize activity navigation
+    initActivityNavigation();
 
     // Update user info
     document.getElementById("username").textContent =
