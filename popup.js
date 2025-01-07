@@ -1,3 +1,43 @@
+function updateDateTime() {
+  const now = new Date();
+
+  // Format time
+  const timeElement = document.getElementById("current-time");
+  timeElement.textContent =
+    now.toLocaleTimeString("en-US", {
+      hour12: false,
+      timeZone: "UTC",
+      hour: "2-digit",
+      minute: "2-digit",
+    }) + " UTC";
+
+  // Format date
+  const dateElement = document.getElementById("current-date");
+  dateElement.textContent = now.toLocaleDateString("en-US", {
+    timeZone: "UTC",
+    year: "numeric",
+    month: "short",
+    day: "numeric",
+  });
+}
+
+function initThemeToggle() {
+  const themeToggle = document.getElementById("theme-toggle");
+  const html = document.documentElement;
+
+  // Load saved theme
+  const savedTheme = localStorage.getItem("theme") || "light";
+  html.setAttribute("data-theme", savedTheme);
+
+  themeToggle.addEventListener("click", () => {
+    const currentTheme = html.getAttribute("data-theme");
+    const newTheme = currentTheme === "light" ? "dark" : "light";
+
+    html.setAttribute("data-theme", newTheme);
+    localStorage.setItem("theme", newTheme);
+  });
+}
+
 async function getCurrentTab() {
   const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
   return tab;
@@ -20,24 +60,45 @@ function formatDate(dateString) {
 
 async function fetchUserData(username) {
   try {
+    // Add user-agent header to avoid GitHub API restrictions
+    const headers = {
+      Accept: "application/vnd.github.v3+json",
+      "User-Agent": "GitHub-Activity-Extension",
+    };
+
     const [userResponse, activitiesResponse] = await Promise.all([
-      fetch(`https://api.github.com/users/${username}`),
-      fetch(`https://api.github.com/users/${username}/events/public`),
+      fetch(`https://api.github.com/users/${username}`, { headers }),
+      fetch(`https://api.github.com/users/${username}/events`, { headers }),
     ]);
 
-    if (!userResponse.ok || !activitiesResponse.ok) {
-      throw new Error("Failed to fetch data");
+    if (!userResponse.ok) {
+      throw new Error(`Failed to fetch user data: ${userResponse.status}`);
+    }
+    if (!activitiesResponse.ok) {
+      throw new Error(
+        `Failed to fetch activities: ${activitiesResponse.status}`,
+      );
     }
 
     const userData = await userResponse.json();
     const activities = await activitiesResponse.json();
+
+    // Validate the responses
+    if (!userData || !userData.login) {
+      throw new Error("Invalid user data received");
+    }
+
+    if (!Array.isArray(activities)) {
+      return { userData, activities: [] }; // Return empty array if no activities
+    }
+
     return { userData, activities };
   } catch (error) {
+    console.error("Error in fetchUserData:", error);
     throw error;
   }
 }
 
-// Update the getActivityIcon function in popup.js
 function getActivityIcon(type) {
   const icons = {
     PushEvent: `<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor">
@@ -65,48 +126,71 @@ function getActivityIcon(type) {
   return icons[type] || icons.default;
 }
 
+function handleAvatarError() {
+  const avatar = document.getElementById("userAvatar");
+  avatar.onerror = function () {
+    this.src = "icons/icon48.png"; // Fallback to default icon
+  };
+}
+
 function formatActivity(activity) {
+  if (!activity || !activity.type || !activity.repo) {
+    return ""; // Skip invalid activities
+  }
+
   const { type, repo, created_at } = activity;
   let description = "";
 
-  switch (type) {
-    case "PushEvent":
-      description = `Pushed to ${repo.name}`;
-      break;
-    case "CreateEvent":
-      description = `Created ${activity.payload.ref_type} in ${repo.name}`;
-      break;
-    case "IssuesEvent":
-      description = `${activity.payload.action} issue in ${repo.name}`;
-      break;
-    case "PullRequestEvent":
-      description = `${activity.payload.action} pull request in ${repo.name}`;
-      break;
-    case "WatchEvent":
-      description = `Starred ${repo.name}`;
-      break;
-    case "ForkEvent":
-      description = `Forked ${repo.name}`;
-      break;
-    default:
-      description = `Activity in ${repo.name}`;
-  }
+  try {
+    switch (type) {
+      case "PushEvent":
+        description = `Pushed to ${repo.name}`;
+        break;
+      case "CreateEvent":
+        description = `Created ${activity.payload?.ref_type || "resource"} in ${repo.name}`;
+        break;
+      case "IssuesEvent":
+        description = `${activity.payload?.action || "Updated"} issue in ${repo.name}`;
+        break;
+      case "PullRequestEvent":
+        description = `${activity.payload?.action || "Updated"} pull request in ${repo.name}`;
+        break;
+      case "WatchEvent":
+        description = `Starred ${repo.name}`;
+        break;
+      case "ForkEvent":
+        description = `Forked ${repo.name}`;
+        break;
+      default:
+        description = `Activity in ${repo.name}`;
+    }
 
-  return `
-        <div class="activity-item">
-            <div class="activity-icon">
-                ${getActivityIcon(type)}
+    return `
+            <div class="activity-item">
+                <div class="activity-icon">
+                    ${getActivityIcon(type)}
+                </div>
+                <div class="activity-content">
+                    <div>${description}</div>
+                    <div class="activity-time">${formatDate(created_at)}</div>
+                </div>
             </div>
-            <div class="activity-content">
-                <div>${description}</div>
-                <div class="activity-time">${formatDate(created_at)}</div>
-            </div>
-        </div>
-    `;
+        `;
+  } catch (error) {
+    console.error("Error formatting activity:", error);
+    return ""; // Skip activities that can't be formatted
+  }
 }
 
 async function init() {
   try {
+    // Initialize theme toggle
+    initThemeToggle();
+
+    // Start datetime updates
+    updateDateTime();
+    setInterval(updateDateTime, 1000);
+
     const tab = await getCurrentTab();
     const username = extractUsername(tab.url);
 
@@ -116,23 +200,43 @@ async function init() {
       return;
     }
 
+    // Show loading state
+    document.getElementById("activities").innerHTML =
+      '<div class="loading">Loading activities...</div>';
+    document.getElementById("username").textContent = "Loading...";
+    document.getElementById("login").textContent = "";
+
+    // Set default avatar while loading
+    document.getElementById("userAvatar").src = "icons/icon48.png"; // Make sure this default icon exists
+
     const { userData, activities } = await fetchUserData(username);
 
     // Update user info
-    document.getElementById("username").textContent = userData.login;
-    document.getElementById("userAvatar").src = userData.avatar_url;
+    if (userData.avatar_url) {
+      document.getElementById("userAvatar").src = userData.avatar_url;
+    }
+    document.getElementById("username").textContent =
+      userData.name || userData.login;
+    document.getElementById("login").textContent = `@${userData.login}`;
 
     // Update activities
-    const activitiesHTML = activities
-      .slice(0, 10)
-      .map((activity) => formatActivity(activity))
-      .join("");
-
-    document.getElementById("activities").innerHTML =
-      activitiesHTML || '<div class="error">No recent activities</div>';
+    if (activities.length > 0) {
+      const activitiesHTML = activities
+        .slice(0, 10)
+        .map((activity) => formatActivity(activity))
+        .join("");
+      document.getElementById("activities").innerHTML = activitiesHTML;
+    } else {
+      document.getElementById("activities").innerHTML =
+        '<div class="loading">No recent activities found</div>';
+    }
   } catch (error) {
+    console.error("Error in init:", error);
+    // Show error state
     document.getElementById("activities").innerHTML =
-      `<div class="error">Error: ${error.message}</div>`;
+      `<div class="error">${error.message}</div>`;
+    document.getElementById("username").textContent = "Error";
+    document.getElementById("login").textContent = "Could not load user data";
   }
 }
 
